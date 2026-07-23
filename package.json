@@ -1,0 +1,37 @@
+{
+  "name": "@forge-kits/nuxt",
+  "version": "0.1.0",
+  "description": "Nuxt composables bridge for forge-kits (FastAPI)",
+  "type": "module",
+  "exports": {
+    ".": "./dist/module.mjs"
+  },
+  "main": "./dist/module.mjs",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "nuxt-module-build build",
+    "dev": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt dev playground",
+    "prepare": "nuxt-module-build prepare",
+    "prepack": "nuxt-module-build build",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@nuxt/kit": "^3.21.8",
+    "defu": "^6.1.4"
+  },
+  "devDependencies": {
+    "@nuxt/module-builder": "^1.0.2",
+    "@nuxt/schema": "^3.21.8",
+    "nuxt": "^3.21.8",
+    "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "nuxt": "^3.17.0 || ^3.21.0 || ^4.0.0"
+  },
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  }
+}
