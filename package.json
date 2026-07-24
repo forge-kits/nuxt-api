@@ -15,7 +15,9 @@
     "dev": "nuxt-module-build build --stub && nuxt-module-build prepare && nuxt dev playground",
     "prepare": "nuxt-module-build prepare",
     "prepack": "nuxt-module-build build",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@nuxt/kit": "^3.21.8",
@@ -24,8 +26,10 @@
   "devDependencies": {
     "@nuxt/module-builder": "^1.0.2",
     "@nuxt/schema": "^3.21.8",
+    "jsdom": "^29.1.1",
     "nuxt": "^3.21.8",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.10"
   },
   "peerDependencies": {
     "nuxt": "^3.17.0 || ^3.21.0 || ^4.0.0"
