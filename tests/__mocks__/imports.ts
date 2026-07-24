@@ -18,6 +18,7 @@ function buildConfig(strategy: Strategy) {
         baseUrl: 'http://localhost:8000',
         prefix: '/api/v1',
         strategy,
+        credentials: true,
         auth: {
           login: '/auth/login',
           logout: '/auth/logout',

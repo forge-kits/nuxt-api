@@ -4,6 +4,7 @@ import { defu } from 'defu'
 export type AuthStrategy = 'cookie' | 'telegram'
 
 export interface ForgeAuthEndpoints {
+  autoFetch: boolean
   login: string
   refresh: string
   logout: string
@@ -14,6 +15,7 @@ export interface ModuleOptions {
   baseUrl: string
   prefix: string
   strategy: AuthStrategy
+  credentials: boolean
   auth: ForgeAuthEndpoints
 }
 
@@ -33,7 +35,9 @@ export default defineNuxtModule<ModuleOptions>({
     baseUrl: 'http://localhost:8000',
     prefix: '/api/v1',
     strategy: 'cookie' as AuthStrategy,
+    credentials: true,
     auth: {
+      autoFetch: true,
       login: '/auth/login',
       refresh: '/auth/refresh',
       logout: '/auth/logout',

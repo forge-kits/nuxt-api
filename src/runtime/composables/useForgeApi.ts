@@ -12,7 +12,7 @@ export interface ForgeRequestOptions {
 
 export const useForgeApi = () => {
   const config = useRuntimeConfig()
-  const { baseUrl, prefix, strategy } = config.public.forgeApi
+  const { baseUrl, prefix, strategy, credentials } = config.public.forgeApi
   const baseURL = `${baseUrl}${prefix}`
 
   function buildHeaders(extra?: Record<string, string>): Record<string, string> {
@@ -38,7 +38,7 @@ export const useForgeApi = () => {
       method,
       query: params,
       headers: buildHeaders(extraHeaders),
-      credentials: 'include',
+      credentials: credentials ? 'include' : 'omit',
       ...rest,
     })
   }

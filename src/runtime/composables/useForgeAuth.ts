@@ -17,7 +17,7 @@ export interface LoginCredentials {
 
 export const useForgeAuth = () => {
   const config = useRuntimeConfig()
-  const { baseUrl, prefix, strategy, auth: endpoints } = config.public.forgeApi
+  const { baseUrl, prefix, strategy, credentials, auth: endpoints } = config.public.forgeApi
   const baseURL = `${baseUrl}${prefix}`
 
   // ─── Backend user ────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ export const useForgeAuth = () => {
       user.value = await $fetch<ForgeUser>(endpoints.me, {
         baseURL,
         headers: buildHeaders(),
-        credentials: 'include',
+        credentials: credentials ? 'include' : 'omit',
       })
     }
     catch {
@@ -92,7 +92,7 @@ export const useForgeAuth = () => {
       baseURL,
       method: 'POST',
       body: credentials,
-      credentials: 'include',
+      credentials: credentials ? 'include' : 'omit',
     })
     await fetchUser()
   }
@@ -102,7 +102,7 @@ export const useForgeAuth = () => {
     await $fetch(endpoints.logout, {
       baseURL,
       method: 'POST',
-      credentials: 'include',
+      credentials: credentials ? 'include' : 'omit',
     }).catch(() => {})
     user.value = null
   }

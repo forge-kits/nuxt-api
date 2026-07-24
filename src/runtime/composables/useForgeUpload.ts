@@ -13,7 +13,7 @@ export interface UploadResponse {
 
 export const useForgeUpload = (uploadPath: string) => {
   const config = useRuntimeConfig()
-  const { baseUrl, prefix, strategy } = config.public.forgeApi
+  const { baseUrl, prefix, strategy, credentials } = config.public.forgeApi
   const baseURL = `${baseUrl}${prefix}`
 
   const progress = ref(0)
@@ -31,7 +31,7 @@ export const useForgeUpload = (uploadPath: string) => {
 
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${baseURL}${uploadPath}`)
-      xhr.withCredentials = true
+      xhr.withCredentials = credentials
 
       if (strategy === 'telegram' && import.meta.client) {
         const initData = (window as TelegramWindow).Telegram?.WebApp?.initData ?? ''
