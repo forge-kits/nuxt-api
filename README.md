@@ -1,6 +1,6 @@
 # @forge-kits/nuxt
 
-Nuxt composables bridge for [forge-kits](https://github.com/netpeak-bg/fastapi-kit) (FastAPI backend).
+Nuxt composables bridge for [forge-kits](https://pypi.org/project/forge-kits/) (FastAPI backend).
 
 ## Installation
 
@@ -19,8 +19,6 @@ export default defineNuxtConfig({
 })
 ```
 
-Defaults (override only what differs):
-
 | Option | Default |
 |---|---|
 | `baseUrl` | `http://localhost:8000` |
@@ -32,9 +30,7 @@ Defaults (override only what differs):
 
 ---
 
-## Auth
-
-### Cookie (default)
+## Auth — Cookie
 
 The server sets a signed `httpOnly` session cookie. Every request sends `credentials: 'include'` automatically. Session is restored after page refresh — the module calls `/auth/me` on app start.
 
@@ -44,58 +40,40 @@ const { user, isAuthenticated, login, logout } = useForgeAuth()
 </script>
 
 <template>
-  <div v-if="isAuthenticated">Hello, {{ user.name }}</div>
+  <div v-if="isAuthenticated">Hello, {{ user.username }}</div>
   <button @click="login({ email: 'user@example.com', password: 'secret' })">Login</button>
   <button @click="logout">Logout</button>
 </template>
 ```
 
-### Telegram Mini App
-
-Reads `window.Telegram.WebApp.initData` and sends it as `X-Telegram-Init-Data`. No explicit login needed — the user is resolved automatically on mount.
-
-```ts
-// nuxt.config.ts
-forgeApi: { strategy: 'telegram' }
-```
-
-### Backend (FastAPI)
+**Backend:**
 
 ```python
 # config/auth.py
-from forgeapi import env
-
 config = {
     "default": "api",
     "guards": {
         "api": {
             "strategy": "cookie",
             "secret": env("COOKIE_SECRET"),
-            "max_age": 60 * 60 * 24 * 7,  # 7 days
+            "max_age": 60 * 60 * 24 * 7,
             "httponly": True,
-            "secure": False,  # True in production
+            "secure": True,
             "samesite": "lax",
         },
     },
 }
-```
 
-```python
 # config/http.py
 config = {
-    "cors": ["http://localhost:3000"],  # explicit origin required for credentials
+    "cors": ["https://your-app.com"],  # explicit origin required for credentials
 }
 ```
 
 ```python
 # app/controllers/auth_controller.py
-from fastapi import HTTPException, Response
-from forgeapi.auth import auth, CurrentUser
-from forgeapi.controllers import Controller, route
-
 class AuthController(Controller):
     prefix = "/auth"
-    tags = ["auth"]
 
     @route.post("/login")
     async def login(self, body: LoginRequest, response: Response):
@@ -116,7 +94,6 @@ class AuthController(Controller):
         return {
             "id":          user.id,
             "email":       user.email,
-            "name":        user.name,
             "permissions": await user.get_all_permissions(),
             "roles":       await user.get_role_names(),
         }
@@ -124,15 +101,76 @@ class AuthController(Controller):
 
 ---
 
-## Permissions & RBAC
+## Auth — Telegram Mini App
 
-`/auth/me` must return `permissions` and `roles`. Once it does:
+Reads `window.Telegram.WebApp.initData` and sends it as `X-Telegram-Init-Data` on every request. No login/logout — the user is resolved automatically via `/auth/me` on app start.
+
+```ts
+// nuxt.config.ts
+forgeApi: { strategy: 'telegram' }
+```
 
 ```vue
 <script setup>
-const { can, canAll, hasRole, hasAllRoles } = useForgeAuth()
-// or separately:
-const { can, hasRole } = useForgePermissions()
+const {
+  user,           // backend user (verified)
+  isAuthenticated,
+  fetchUser,
+  // Telegram WebApp shortcuts (UI-only, untrusted)
+  tgUser,
+  tgUserId,
+  tgUsername,
+  tgFullName,
+  tgPhotoUrl,
+  tgLanguageCode,
+  tgIsPremium,
+  isWebApp,
+  tgReady,
+  tgHaptic,
+  tgHapticSuccess,
+} = useForgeAuth()
+
+onMounted(tgReady)
+</script>
+
+<template>
+  <img v-if="tgPhotoUrl" :src="tgPhotoUrl" />
+  <p>{{ tgFullName }}</p>
+</template>
+```
+
+> `tgUser` and its shortcuts come from `initDataUnsafe` — use for display only. The backend verifies `initData` via the `X-Telegram-Init-Data` header.
+
+**Local development** — paste a real `initData` string to `.env`:
+
+```env
+VITE_TELEGRAM_INIT_DATA=user=%7B%22id%22%3A...&hash=abc123
+```
+
+**Backend:**
+
+```python
+# config/auth.py
+config = {
+    "default": "api",
+    "guards": {
+        "api": {
+            "strategy": "telegram",
+            "token": env("TELEGRAM_BOT_TOKEN"),
+        },
+    },
+}
+```
+
+---
+
+## Permissions & RBAC
+
+`/auth/me` must return `permissions` and `roles` arrays.
+
+```vue
+<script setup>
+const { can, canAll, hasRole, hasAllRoles } = useForgePermissions()
 </script>
 
 <template>
@@ -143,7 +181,7 @@ const { can, hasRole } = useForgePermissions()
 ```
 
 | Method | Returns `true` when |
-|--------|-------------|
+|---|---|
 | `can(...perms)` | user has **any** of the permissions |
 | `canAll(...perms)` | user has **all** permissions |
 | `hasRole(...roles)` | user has **any** of the roles |
@@ -153,27 +191,36 @@ const { can, hasRole } = useForgePermissions()
 
 ## Route middleware
 
-```vue
-<script setup>
-// throws 403 if permission missing
+```ts
+// pages/posts/edit.vue
 definePageMeta({ middleware: [PermissionMiddleware('edit:posts')] })
-</script>
-```
 
-```vue
-<script setup>
-// throws 403 if role missing
+// pages/admin.vue
 definePageMeta({ middleware: [RoleMiddleware('admin')] })
-</script>
 ```
 
-Auth redirect middleware — write it yourself in `middleware/auth.ts`:
+Auth redirect — write it yourself in `middleware/auth.ts`:
 
 ```ts
 export default defineNuxtRouteMiddleware(() => {
   const { isAuthenticated } = useForgeAuth()
   if (!isAuthenticated.value) return navigateTo('/login')
 })
+```
+
+---
+
+## API calls
+
+```vue
+<script setup>
+const api = useForgeApi()
+
+const posts = await api.get<Post[]>('/posts')
+const post  = await api.post<Post>('/posts', { title: 'Hello' })
+await api.patch(`/posts/${id}`, { title: 'Updated' })
+await api.delete(`/posts/${id}`)
+</script>
 ```
 
 ---
@@ -214,24 +261,7 @@ async function handleSubmit() {
 
 ---
 
-## API calls
-
-```vue
-<script setup>
-const api = useForgeApi()
-
-const posts = await api.get<Post[]>('/posts')
-const post  = await api.post<Post>('/posts', { title: 'Hello' })
-await api.patch(`/posts/${id}`, { title: 'Updated' })
-await api.delete(`/posts/${id}`)
-</script>
-```
-
----
-
 ## Pagination
-
-Connects to ForgeAPI paginated endpoints (`?page=1&per_page=20`). The max `per_page` is enforced on the backend (`config/pagination.py → max_limit`). When `perPage` is omitted, the backend default applies.
 
 ```vue
 <script setup>
@@ -246,6 +276,8 @@ const { data, meta, loading, page, nextPage, prevPage } =
   <button :disabled="!meta || page >= meta.last_page" @click="nextPage">Next</button>
 </template>
 ```
+
+Options: `{ perPage?: number, immediate?: boolean }`. When `perPage` is omitted the backend default applies. The max is enforced server-side (`config/pagination.py → max_limit`).
 
 ---
 
@@ -273,12 +305,9 @@ async function handleFile(e: Event) {
 </template>
 ```
 
-**Backend endpoint:**
+**Backend:**
 
 ```python
-from fastapi import UploadFile
-from forgeapi import Storage
-
 @router.post("/files/upload")
 async def upload_file(file: UploadFile, user: CurrentUser):
     data = await file.read()
@@ -288,28 +317,11 @@ async def upload_file(file: UploadFile, user: CurrentUser):
 
 ---
 
-## Local development
-
-```bash
-# build and install locally into another project
-npm run build
-npm install /path/to/nuxt-api
-
-# watch mode + playground (recommended during development)
-npm run dev
-
-# publish to npm
-npm run build
-npm publish
-```
-
----
-
 ## API reference
 
 | Composable | Returns |
 |---|---|
-| `useForgeAuth()` | `user`, `isAuthenticated`, `login`, `logout`, `fetchUser`, `can`, `canAll`, `hasRole`, `hasAllRoles`, `permissions`, `roles` |
+| `useForgeAuth()` | `user`, `isAuthenticated`, `login`, `logout`, `fetchUser`, `initData`, `initDataUnsafe`, `tgUser`, `tgUserId`, `tgUsername`, `tgFullName`, `tgPhotoUrl`, `tgLanguageCode`, `tgIsPremium`, `tgAllowsWriteToPm`, `isWebApp`, `tgReady`, `tgHaptic`, `tgHapticSuccess` |
 | `useForgePermissions()` | `permissions`, `roles`, `can`, `canAll`, `hasRole`, `hasAllRoles` |
 | `useForgeApi()` | `get`, `post`, `patch`, `put`, `delete` |
 | `useForgeForm(initial)` | `form`, `errors`, `serverError`, `loading`, `clearErrors`, `submit` |
