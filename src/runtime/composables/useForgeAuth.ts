@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { useRuntimeConfig, useState } from '#imports'
 
-export type AuthRole = 'user' | 'admin'
+export type AuthRole = 'client' | 'guard'
 
 export interface ForgeUser {
   id: string | number
@@ -17,10 +17,10 @@ export interface LoginCredentials {
   password: string
 }
 
-export const useForgeAuth = (role: AuthRole = 'user') => {
+export const useForgeAuth = (role: AuthRole = 'client') => {
   const config = useRuntimeConfig()
-  const { url, prefix, strategy, credentials, auth } = config.public.forgeApi
-  const baseURL = `${url}${prefix}`
+  const { url, prefix, strategy, credentials: includeCredentials, auth } = config.public.forgeApi
+  const baseURL = prefix ? `${url}${prefix}` : url
   const endpoints = auth[role]
 
   // ─── Backend user ────────────────────────────────────────────────────────────
@@ -75,13 +75,14 @@ export const useForgeAuth = (role: AuthRole = 'user') => {
     return {}
   }
 
-  const fetchUser = async (): Promise<void> => {
+  const fetchUser = async (extra?: Record<string, unknown>): Promise<void> => {
     if (!endpoints.me) return
     try {
       user.value = await $fetch<ForgeUser>(endpoints.me, {
         baseURL,
         headers: buildHeaders(),
-        credentials: credentials ? 'include' : 'omit',
+        credentials: includeCredentials ? 'include' : 'omit',
+        ...extra,
       })
     }
     catch {
@@ -89,13 +90,13 @@ export const useForgeAuth = (role: AuthRole = 'user') => {
     }
   }
 
-  const login = async (credentials: LoginCredentials): Promise<void> => {
+  const login = async (creds: LoginCredentials): Promise<void> => {
     if (strategy === 'telegram') return
     await $fetch(endpoints.login, {
       baseURL,
       method: 'POST',
-      body: credentials,
-      credentials: credentials ? 'include' : 'omit',
+      body: creds,
+      credentials: includeCredentials ? 'include' : 'omit',
     })
     await fetchUser()
   }
@@ -105,7 +106,7 @@ export const useForgeAuth = (role: AuthRole = 'user') => {
     await $fetch(endpoints.logout, {
       baseURL,
       method: 'POST',
-      credentials: credentials ? 'include' : 'omit',
+      credentials: includeCredentials ? 'include' : 'omit',
     }).catch(() => {})
     user.value = null
   }

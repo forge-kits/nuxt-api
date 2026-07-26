@@ -3,8 +3,8 @@
 Nuxt module that bridges [forge-kits](https://pypi.org/project/forge-kits/) FastAPI backend with your Nuxt app.
 
 **Two auth contexts, one module:**
-- `useForgeAuth()` — regular users. Login, logout, current user. No roles, no permissions.
-- `useForgeAuth('admin')` — admin panel. Independent session, full RBAC via `useForgePermissions`.
+- `useForgeAuth()` / `useForgeAuth('client')` — regular users. Login, logout, current user.
+- `useForgeAuth('guard')` — RBAC context. Independent session, full RBAC via `useForgePermissions`.
 
 ---
 
@@ -20,8 +20,12 @@ export default defineNuxtConfig({
   modules: ['@forge-kits/nuxt'],
   forgeApi: {
     url: 'http://localhost:8000',
-    prefix: '/api/v1',
-    strategy: 'cookie', // 'cookie' | 'telegram'
+    prefix: '/api/v1',   // or false to omit
+    strategy: 'cookie',  // 'cookie' | 'telegram'
+    auth: {
+      client: { autoFetch: true },
+      guard: { autoFetch: false },
+    },
   },
 })
 ```
@@ -31,20 +35,21 @@ export default defineNuxtConfig({
 | Option | Default | Description |
 |---|---|---|
 | `url` | `http://localhost:8000` | Backend base URL |
-| `prefix` | `/api/v1` | API prefix, prepended to every request |
+| `prefix` | `/api/v1` | API prefix prepended to every request. Set to `false` to omit |
 | `strategy` | `cookie` | Auth strategy: `cookie` or `telegram` |
 | `credentials` | `true` | Send cookies with every request |
-| `auth.autoFetch` | `true` | Fetch current user on app start |
-| `auth.user.login` | `/auth/login` | User login endpoint |
-| `auth.user.logout` | `/auth/logout` | User logout endpoint |
-| `auth.user.me` | `/auth/me` | User current-user endpoint |
-| `auth.admin.login` | `/admin/auth/login` | Admin login endpoint |
-| `auth.admin.logout` | `/admin/auth/logout` | Admin logout endpoint |
-| `auth.admin.me` | `/admin/auth/me` | Admin current-user endpoint |
+| `auth.client.autoFetch` | `false` | Fetch client session on app start |
+| `auth.client.login` | `/auth/login` | Client login endpoint |
+| `auth.client.logout` | `/auth/logout` | Client logout endpoint |
+| `auth.client.me` | `/auth/me` | Client current-user endpoint |
+| `auth.guard.autoFetch` | `false` | Fetch guard session on app start |
+| `auth.guard.login` | `/admin/auth/login` | Guard login endpoint |
+| `auth.guard.logout` | `/admin/auth/logout` | Guard logout endpoint |
+| `auth.guard.me` | `/admin/auth/me` | Guard current-user endpoint |
 
 ---
 
-## User auth — Cookie
+## Client auth — Cookie
 
 The server sets a signed `httpOnly` session cookie. Every request sends `credentials: 'include'` automatically. On app start the module calls `/auth/me` and hydrates the user state.
 
@@ -103,14 +108,40 @@ const { user, isAuthenticated, logout } = useForgeAuth()
 </template>
 ```
 
-### Auth guard middleware
+### Client auth middleware
 
 ```ts
-// middleware/auth.ts
+// middleware/auth.ts — manual
 export default defineNuxtRouteMiddleware(() => {
   const { isAuthenticated } = useForgeAuth()
   if (!isAuthenticated.value) return navigateTo('/login')
 })
+
+// or via factory
+definePageMeta({
+  middleware: [ForgeAuthMiddleware({ redirect: '/login' })],
+})
+```
+
+### `<ForgeAuth>` component
+
+Renders slot only when authenticated. Accepts `role` prop (`'client'` | `'guard'`, default `'client'`).
+
+```vue
+<ForgeAuth>
+  <UserDashboard />
+  <template #fallback>
+    <NuxtLink to="/login">Login</NuxtLink>
+  </template>
+</ForgeAuth>
+
+<!-- guard context -->
+<ForgeAuth role="guard">
+  <AdminPanel />
+  <template #fallback>
+    <NuxtLink to="/admin/login">Admin login</NuxtLink>
+  </template>
+</ForgeAuth>
 ```
 
 **Backend:**
@@ -141,7 +172,7 @@ class AuthController(Controller):
 
 ---
 
-## User auth — Telegram Mini App
+## Client auth — Telegram Mini App
 
 Reads `window.Telegram.WebApp.initData` and sends it as `X-Telegram-Init-Data` on every request. No login/logout — the user is resolved via `/auth/me` on app start.
 
@@ -188,18 +219,31 @@ onMounted(tgReady)
 VITE_TELEGRAM_INIT_DATA=user=%7B%22id%22%3A...&hash=abc123
 ```
 
+### `<ForgeTg>` component
+
+Renders slot only inside a Telegram Mini App (`isWebApp === true`).
+
+```vue
+<ForgeTg>
+  <TelegramSpecificUI />
+  <template #fallback>
+    <p>Open in Telegram to continue.</p>
+  </template>
+</ForgeTg>
+```
+
 ---
 
-## Admin auth & RBAC
+## Guard auth & RBAC
 
-Admin has its own independent session (`forge_admin` state, separate endpoints). The `/admin/auth/me` response must include `permissions` and `roles` arrays — the module uses them for all RBAC checks.
+Guard has its own independent session (`forge_guard` state, separate endpoints). The guard's `/me` response must include `permissions` and `roles` arrays — the module uses them for all RBAC checks.
 
-### Admin login page
+### Guard login page
 
 ```vue
 <!-- pages/admin/login.vue -->
 <script setup lang="ts">
-const { login, isAuthenticated } = useForgeAuth('admin')
+const { login, isAuthenticated } = useForgeAuth('guard')
 const { form, errors, serverError, loading, submit } = useForgeForm({
   email: '',
   password: '',
@@ -231,12 +275,17 @@ async function handleLogin() {
 </template>
 ```
 
-### Admin auth guard middleware
+### Guard auth middleware
 
 ```ts
-// middleware/admin-auth.ts
+// via factory (recommended)
+definePageMeta({
+  middleware: [ForgeAuthMiddleware({ role: 'guard', redirect: '/admin/login' })],
+})
+
+// or manual
 export default defineNuxtRouteMiddleware(() => {
-  const { isAuthenticated } = useForgeAuth('admin')
+  const { isAuthenticated } = useForgeAuth('guard')
   if (!isAuthenticated.value) return navigateTo('/admin/login')
 })
 ```
@@ -288,10 +337,10 @@ const { can, canAll, hasRole, hasAllRoles, permissions, roles } = useForgePermis
 
 | Method | Returns `true` when |
 |---|---|
-| `can(...perms)` | admin has **any** of the permissions |
-| `canAll(...perms)` | admin has **all** permissions |
-| `hasRole(...roles)` | admin has **any** of the roles |
-| `hasAllRoles(...roles)` | admin has **all** roles |
+| `can(...perms)` | guard has **any** of the permissions |
+| `canAll(...perms)` | guard has **all** permissions |
+| `hasRole(...roles)` | guard has **any** of the roles |
+| `hasAllRoles(...roles)` | guard has **all** roles |
 
 ### RBAC route middleware
 
@@ -494,29 +543,34 @@ async function handleAvatar(file: File) {
 
 | Composable | Signature | Returns |
 |---|---|---|
-| `useForgeAuth` | `(role?: 'user' \| 'admin')` | `user, isAuthenticated, login, logout, fetchUser, initData, initDataUnsafe, tgUser, tgUserId, tgUsername, tgFullName, tgPhotoUrl, tgLanguageCode, tgIsPremium, tgAllowsWriteToPm, isWebApp, tgReady, tgHaptic, tgHapticSuccess` |
+| `useForgeAuth` | `(role?: 'client' \| 'guard')` | `user, isAuthenticated, login, logout, fetchUser, initData, initDataUnsafe, tgUser, tgUserId, tgUsername, tgFullName, tgPhotoUrl, tgLanguageCode, tgIsPremium, tgAllowsWriteToPm, isWebApp, tgReady, tgHaptic, tgHapticSuccess` |
 | `useForgePermissions` | `()` | `permissions, roles, can, canAll, hasRole, hasAllRoles` |
 | `useForgeApi` | `()` | `get, post, patch, put, delete` |
 | `useForgeForm` | `<T>(initial: T)` | `form, errors, serverError, loading, clearErrors, submit` |
 | `useForgePagination` | `<T>(url, opts?)` | `data, meta, links, loading, error, page, perPage, fetch, nextPage, prevPage, goToPage` |
 | `useForgeUpload` | `(path: string)` | `progress, loading, error, result, upload, reset` |
 
-### Components (admin RBAC only)
+### Components
 
 | Component | Props | Description |
 |---|---|---|
-| `<ForgeCan>` | `perm: string\|string[], all?: boolean` | Renders slot if admin has the permission(s) |
-| `<ForgeRole>` | `role: string\|string[], all?: boolean` | Renders slot if admin has the role(s) |
+| `<ForgeAuth>` | `role?: 'client' \| 'guard'` | Renders slot if authenticated in the given context |
+| `<ForgeTg>` | — | Renders slot only inside a Telegram Mini App |
+| `<ForgeCan>` | `perm: string\|string[], all?: boolean` | Renders slot if guard has the permission(s) |
+| `<ForgeRole>` | `role: string\|string[], all?: boolean` | Renders slot if guard has the role(s) |
 
-Both accept a `#fallback` slot rendered when access is denied.
+All components accept a `#fallback` slot rendered when access is denied.
 
-### Middleware factories (admin RBAC only)
+### Middleware factories
 
 | Factory | Signature | Description |
 |---|---|---|
+| `ForgeAuthMiddleware` | `(opts?)` | Requires authenticated session |
 | `PermissionMiddleware` | `(perm, opts?)` | Any of the given permissions |
 | `PermissionAllMiddleware` | `(perm, opts?)` | All of the given permissions |
 | `RoleMiddleware` | `(role, opts?)` | Any of the given roles |
 | `RoleAllMiddleware` | `(role, opts?)` | All of the given roles |
 
-`opts`: `{ redirect?: string }`
+`opts` for `ForgeAuthMiddleware`: `{ role?: 'client' | 'guard', redirect?: string }`
+
+`opts` for RBAC middleware: `{ redirect?: string }`

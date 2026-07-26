@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { setStrategy } from './__mocks__/imports'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { setStrategy, setPrefix, resetConfig } from './__mocks__/imports'
 import { useForgeAuth } from '../src/runtime/composables/useForgeAuth'
 
 const tgWebApp = (initData = 'tg-init-data') => ({
@@ -130,6 +130,68 @@ describe('useForgeAuth', () => {
       })
       const { tgFullName } = useForgeAuth()
       expect(tgFullName.value).toBe('Solo')
+    })
+  })
+
+  describe('Guard role', () => {
+    beforeEach(() => resetConfig())
+
+    it('login calls POST /admin/auth/login then fetchUser', async () => {
+      vi.mocked($fetch)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ id: 99, email: 'admin@b.com' })
+
+      const { login, user } = useForgeAuth('guard')
+      await login({ email: 'admin@b.com', password: 'secret' })
+
+      expect(vi.mocked($fetch)).toHaveBeenNthCalledWith(1, '/admin/auth/login', expect.objectContaining({
+        method: 'POST',
+        body: { email: 'admin@b.com', password: 'secret' },
+        credentials: 'include',
+      }))
+      expect(user.value).toEqual({ id: 99, email: 'admin@b.com' })
+    })
+
+    it('logout calls POST /admin/auth/logout and clears user', async () => {
+      vi.mocked($fetch)
+        .mockResolvedValueOnce({ id: 99 })
+        .mockResolvedValueOnce(undefined)
+
+      const { fetchUser, logout, user } = useForgeAuth('guard')
+      await fetchUser()
+      await logout()
+
+      expect(vi.mocked($fetch)).toHaveBeenCalledWith('/admin/auth/logout', expect.objectContaining({
+        method: 'POST',
+      }))
+      expect(user.value).toBeNull()
+    })
+
+    it('client and guard states are independent', async () => {
+      vi.mocked($fetch)
+        .mockResolvedValueOnce({ id: 1, email: 'user@b.com' })
+        .mockResolvedValueOnce({ id: 99, email: 'admin@b.com' })
+
+      const { fetchUser: fetchClient, user: clientUser } = useForgeAuth('client')
+      const { fetchUser: fetchGuard, user: guardUser } = useForgeAuth('guard')
+      await fetchClient()
+      await fetchGuard()
+
+      expect(clientUser.value?.email).toBe('user@b.com')
+      expect(guardUser.value?.email).toBe('admin@b.com')
+    })
+  })
+
+  describe('prefix: false', () => {
+    beforeEach(() => setPrefix(false))
+    afterEach(() => resetConfig())
+
+    it('baseURL is just the url without prefix', async () => {
+      vi.mocked($fetch).mockResolvedValueOnce({ id: 1 })
+      await useForgeAuth().fetchUser()
+      expect(vi.mocked($fetch)).toHaveBeenCalledWith('/auth/me', expect.objectContaining({
+        baseURL: 'http://localhost:8000',
+      }))
     })
   })
 })

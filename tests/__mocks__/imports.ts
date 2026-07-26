@@ -11,22 +11,28 @@ export const useState = <T>(key: string, init: () => T): Ref<T> => {
 
 type Strategy = 'cookie' | 'telegram'
 
-function buildConfig(strategy: Strategy) {
+interface ConfigOverrides {
+  strategy?: Strategy
+  prefix?: string | false
+}
+
+function buildConfig({ strategy = 'cookie', prefix = '/api/v1' }: ConfigOverrides = {}) {
   return {
     public: {
       forgeApi: {
         url: 'http://localhost:8000',
-        prefix: '/api/v1',
+        prefix,
         strategy,
         credentials: true,
         auth: {
-          autoFetch: true,
-          user: {
+          client: {
+            autoFetch: false,
             login: '/auth/login',
             logout: '/auth/logout',
             me: '/auth/me',
           },
-          admin: {
+          guard: {
+            autoFetch: false,
             login: '/admin/auth/login',
             logout: '/admin/auth/logout',
             me: '/admin/auth/me',
@@ -37,8 +43,9 @@ function buildConfig(strategy: Strategy) {
   }
 }
 
-let _config = buildConfig('cookie')
+let _config = buildConfig()
 
-export const setStrategy = (strategy: Strategy) => { _config = buildConfig(strategy) }
-export const resetConfig = () => { _config = buildConfig('cookie') }
+export const setStrategy = (strategy: Strategy) => { _config = buildConfig({ strategy }) }
+export const setPrefix = (prefix: string | false) => { _config = buildConfig({ prefix }) }
+export const resetConfig = () => { _config = buildConfig() }
 export const useRuntimeConfig = () => _config

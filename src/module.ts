@@ -2,23 +2,23 @@ import { defineNuxtModule, addImports, addPlugin, addComponent, createResolver }
 import { defu } from 'defu'
 
 export type AuthStrategy = 'cookie' | 'telegram'
-export type AuthRole = 'user' | 'admin'
+export type AuthRole = 'client' | 'guard'
 
 export interface ForgeAuthRoleEndpoints {
+  autoFetch: boolean
   login: string
   logout: string
   me: string
 }
 
 export interface ForgeAuthEndpoints {
-  autoFetch: boolean
-  user: ForgeAuthRoleEndpoints
-  admin: ForgeAuthRoleEndpoints
+  client: ForgeAuthRoleEndpoints
+  guard: ForgeAuthRoleEndpoints
 }
 
 export interface ModuleOptions {
   url: string
-  prefix: string
+  prefix: string | false
   strategy: AuthStrategy
   credentials: boolean
   auth: ForgeAuthEndpoints
@@ -42,13 +42,14 @@ export default defineNuxtModule<ModuleOptions>({
     strategy: 'cookie' as AuthStrategy,
     credentials: true,
     auth: {
-      autoFetch: true,
-      user: {
+      client: {
+        autoFetch: false,
         login: '/auth/login',
         logout: '/auth/logout',
         me: '/auth/me',
       },
-      admin: {
+      guard: {
+        autoFetch: false,
         login: '/admin/auth/login',
         logout: '/admin/auth/logout',
         me: '/admin/auth/me',
@@ -79,6 +80,7 @@ export default defineNuxtModule<ModuleOptions>({
       // Uploads
       { name: 'useForgeUpload', from: resolver.resolve('./runtime/composables/useForgeUpload') },
       // Middleware factories
+      { name: 'ForgeAuthMiddleware', from: resolver.resolve('./runtime/utils/forgeCanMiddleware') },
       { name: 'PermissionMiddleware', from: resolver.resolve('./runtime/utils/forgeCanMiddleware') },
       { name: 'PermissionAllMiddleware', from: resolver.resolve('./runtime/utils/forgeCanMiddleware') },
       { name: 'RoleMiddleware', from: resolver.resolve('./runtime/utils/forgeCanMiddleware') },
@@ -87,5 +89,7 @@ export default defineNuxtModule<ModuleOptions>({
 
     addComponent({ name: 'ForgeCan', filePath: resolver.resolve('./runtime/components/ForgeCan') })
     addComponent({ name: 'ForgeRole', filePath: resolver.resolve('./runtime/components/ForgeRole') })
+    addComponent({ name: 'ForgeAuth', filePath: resolver.resolve('./runtime/components/ForgeAuth') })
+    addComponent({ name: 'ForgeTg', filePath: resolver.resolve('./runtime/components/ForgeTg') })
   },
 })

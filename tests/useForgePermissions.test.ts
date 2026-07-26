@@ -3,7 +3,7 @@ import { useState } from './__mocks__/imports'
 import { useForgePermissions } from '../src/runtime/composables/useForgePermissions'
 
 function setUser(data: { permissions?: string[], roles?: string[] } | null) {
-  useState('forge_admin', () => null).value = data
+  useState('forge_guard', () => null).value = data
 }
 
 describe('useForgePermissions', () => {

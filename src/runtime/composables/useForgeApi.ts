@@ -13,7 +13,7 @@ export interface ForgeRequestOptions {
 export const useForgeApi = () => {
   const config = useRuntimeConfig()
   const { url, prefix, strategy, credentials } = config.public.forgeApi
-  const baseURL = `${url}${prefix}`
+  const baseURL = prefix ? `${url}${prefix}` : url
 
   function buildHeaders(extra?: Record<string, string>): Record<string, string> {
     const h: Record<string, string> = { ...extra }

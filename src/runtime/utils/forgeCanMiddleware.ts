@@ -1,5 +1,7 @@
 import { defineNuxtRouteMiddleware, navigateTo, createError } from '#imports'
+import { useForgeAuth } from '../composables/useForgeAuth'
 import { useForgePermissions } from '../composables/useForgePermissions'
+import type { AuthRole } from '../composables/useForgeAuth'
 
 interface MiddlewareOptions {
   redirect?: string
@@ -9,6 +11,14 @@ function deny(redirect?: string) {
   if (redirect) return navigateTo(redirect)
   throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
 }
+
+export const ForgeAuthMiddleware = (
+  options: MiddlewareOptions & { role?: AuthRole } = {},
+) =>
+  defineNuxtRouteMiddleware(() => {
+    const { isAuthenticated } = useForgeAuth(options.role ?? 'client')
+    if (!isAuthenticated.value) return deny(options.redirect)
+  })
 
 export const PermissionMiddleware = (
   perm: string | string[],
