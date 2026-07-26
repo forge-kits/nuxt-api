@@ -1,6 +1,8 @@
 import { computed } from 'vue'
 import { useRuntimeConfig, useState } from '#imports'
 
+export type AuthRole = 'user' | 'admin'
+
 export interface ForgeUser {
   id: string | number
   username?: string
@@ -15,13 +17,14 @@ export interface LoginCredentials {
   password: string
 }
 
-export const useForgeAuth = () => {
+export const useForgeAuth = (role: AuthRole = 'user') => {
   const config = useRuntimeConfig()
-  const { baseUrl, prefix, strategy, credentials, auth: endpoints } = config.public.forgeApi
-  const baseURL = `${baseUrl}${prefix}`
+  const { url, prefix, strategy, credentials, auth } = config.public.forgeApi
+  const baseURL = `${url}${prefix}`
+  const endpoints = auth[role]
 
   // ─── Backend user ────────────────────────────────────────────────────────────
-  const user = useState<ForgeUser | null>('forge_user', () => null)
+  const user = useState<ForgeUser | null>(`forge_${role}`, () => null)
   const isAuthenticated = computed(() => !!user.value)
 
   // ─── Telegram WebApp ─────────────────────────────────────────────────────────

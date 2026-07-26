@@ -1,6 +1,6 @@
 {
   "name": "@forge-kits/nuxt",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Nuxt composables bridge for forge-kits (FastAPI)",
   "type": "module",
   "exports": {

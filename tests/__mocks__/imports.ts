@@ -15,15 +15,22 @@ function buildConfig(strategy: Strategy) {
   return {
     public: {
       forgeApi: {
-        baseUrl: 'http://localhost:8000',
+        url: 'http://localhost:8000',
         prefix: '/api/v1',
         strategy,
         credentials: true,
         auth: {
-          login: '/auth/login',
-          logout: '/auth/logout',
-          me: '/auth/me',
-          refresh: '/auth/refresh',
+          autoFetch: true,
+          user: {
+            login: '/auth/login',
+            logout: '/auth/logout',
+            me: '/auth/me',
+          },
+          admin: {
+            login: '/admin/auth/login',
+            logout: '/admin/auth/logout',
+            me: '/admin/auth/me',
+          },
         },
       },
     },

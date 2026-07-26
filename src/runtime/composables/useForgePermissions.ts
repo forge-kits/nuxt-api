@@ -3,7 +3,7 @@ import { useState } from '#imports'
 import type { ForgeUser } from './useForgeAuth'
 
 export const useForgePermissions = () => {
-  const user = useState<ForgeUser | null>('forge_user', () => null)
+  const user = useState<ForgeUser | null>('forge_admin', () => null)
 
   const permissions = computed<string[]>(() =>
     (user.value?.permissions ?? []) as string[],

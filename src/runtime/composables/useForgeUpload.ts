@@ -13,8 +13,8 @@ export interface UploadResponse {
 
 export const useForgeUpload = (uploadPath: string) => {
   const config = useRuntimeConfig()
-  const { baseUrl, prefix, strategy, credentials } = config.public.forgeApi
-  const baseURL = `${baseUrl}${prefix}`
+  const { url, prefix, strategy, credentials } = config.public.forgeApi
+  const baseURL = `${url}${prefix}`
 
   const progress = ref(0)
   const loading = ref(false)
