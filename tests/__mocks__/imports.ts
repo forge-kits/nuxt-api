@@ -9,6 +9,8 @@ export const useState = <T>(key: string, init: () => T): Ref<T> => {
   return _store.get(key) as Ref<T>
 }
 
+export const useNuxtApp = () => ({ isHydrating: false })
+
 type Strategy = 'cookie' | 'telegram'
 
 interface ConfigOverrides {
@@ -22,20 +24,33 @@ function buildConfig({ strategy = 'cookie', prefix = '/api/v1' }: ConfigOverride
       forgeApi: {
         url: 'http://localhost:8000',
         prefix,
-        strategy,
         credentials: true,
-        auth: {
-          client: {
+        default: 'api',
+        guards: {
+          api: {
+            strategy,
             autoFetch: false,
-            login: '/auth/login',
-            logout: '/auth/logout',
-            me: '/auth/me',
+            endpoints: {
+              login: '/auth/login',
+              logout: '/auth/logout',
+              me: '/auth/me',
+            },
           },
-          guard: {
+          admin: {
+            strategy: 'cookie' as Strategy,
             autoFetch: false,
-            login: '/admin/auth/login',
-            logout: '/admin/auth/logout',
-            me: '/admin/auth/me',
+            endpoints: {
+              login: '/admin/auth/login',
+              logout: '/admin/auth/logout',
+              me: '/admin/auth/me',
+            },
+          },
+          tg: {
+            strategy: 'telegram' as Strategy,
+            autoFetch: false,
+            endpoints: {
+              me: '/auth/me',
+            },
           },
         },
       },

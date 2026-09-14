@@ -2,31 +2,74 @@ import { defineNuxtModule, addImports, addPlugin, addComponent, createResolver }
 import { defu } from 'defu'
 
 export type AuthStrategy = 'cookie' | 'telegram'
-export type AuthRole = 'client' | 'guard'
 
-export interface ForgeAuthRoleEndpoints {
-  autoFetch: boolean
-  login: string
-  logout: string
-  me: string
+export interface CookieGuardConfig {
+  strategy: 'cookie'
+  autoFetch?: boolean
+  endpoints?: {
+    login?: string
+    logout?: string
+    me?: string
+  }
 }
 
-export interface ForgeAuthEndpoints {
-  client: ForgeAuthRoleEndpoints
-  guard: ForgeAuthRoleEndpoints
+export interface TelegramGuardConfig {
+  strategy: 'telegram'
+  autoFetch?: boolean
+  endpoints?: {
+    me?: string
+  }
+}
+
+export type GuardConfig = CookieGuardConfig | TelegramGuardConfig
+
+export interface ResolvedGuard {
+  strategy: AuthStrategy
+  autoFetch: boolean
+  endpoints: {
+    login?: string
+    logout?: string
+    me: string
+  }
 }
 
 export interface ModuleOptions {
   url: string
+  prefix?: string | false
+  credentials?: boolean
+  default?: string
+  guards: Record<string, GuardConfig>
+}
+
+export interface ResolvedModuleOptions {
+  url: string
   prefix: string | false
-  strategy: AuthStrategy
   credentials: boolean
-  auth: ForgeAuthEndpoints
+  default: string
+  guards: Record<string, ResolvedGuard>
 }
 
 declare module 'nuxt/schema' {
   interface PublicRuntimeConfig {
-    forgeApi: ModuleOptions
+    forgeApi: ResolvedModuleOptions
+  }
+}
+
+function resolveEndpoints(
+  name: string,
+  isDefault: boolean,
+  guard: GuardConfig,
+): ResolvedGuard['endpoints'] {
+  const base = isDefault ? '/auth' : `/${name}/auth`
+
+  if (guard.strategy === 'telegram') {
+    return { me: guard.endpoints?.me ?? `${base}/me` }
+  }
+
+  return {
+    login: guard.endpoints?.login ?? `${base}/login`,
+    logout: guard.endpoints?.logout ?? `${base}/logout`,
+    me: guard.endpoints?.me ?? `${base}/me`,
   }
 }
 
@@ -39,47 +82,48 @@ export default defineNuxtModule<ModuleOptions>({
   defaults: {
     url: 'http://localhost:8000',
     prefix: '/api/v1',
-    strategy: 'cookie' as AuthStrategy,
     credentials: true,
-    auth: {
-      client: {
-        autoFetch: false,
-        login: '/auth/login',
-        logout: '/auth/logout',
-        me: '/auth/me',
-      },
-      guard: {
-        autoFetch: false,
-        login: '/admin/auth/login',
-        logout: '/admin/auth/logout',
-        me: '/admin/auth/me',
-      },
+    default: 'api',
+    guards: {
+      api: { strategy: 'cookie' },
     },
   },
   setup(options, nuxt) {
     const resolver = createResolver(import.meta.url)
+    const defaultGuard = options.default ?? 'api'
+
+    const resolvedGuards: Record<string, ResolvedGuard> = {}
+    for (const [name, guard] of Object.entries(options.guards)) {
+      resolvedGuards[name] = {
+        strategy: guard.strategy,
+        autoFetch: guard.autoFetch ?? false,
+        endpoints: resolveEndpoints(name, name === defaultGuard, guard),
+      }
+    }
 
     nuxt.options.runtimeConfig.public.forgeApi = defu(
-      nuxt.options.runtimeConfig.public.forgeApi as ModuleOptions,
-      options,
+      nuxt.options.runtimeConfig.public.forgeApi as ResolvedModuleOptions,
+      {
+        url: options.url,
+        prefix: options.prefix ?? '/api/v1',
+        credentials: options.credentials ?? true,
+        default: defaultGuard,
+        guards: resolvedGuards,
+      },
     )
 
     addPlugin(resolver.resolve('./runtime/plugins/forge-auth'))
 
     addImports([
-      // API
       { name: 'useForgeApi', from: resolver.resolve('./runtime/composables/useForgeApi') },
-      // Auth
       { name: 'useForgeAuth', from: resolver.resolve('./runtime/composables/useForgeAuth') },
-      // Permissions / RBAC
       { name: 'useForgePermissions', from: resolver.resolve('./runtime/composables/useForgePermissions') },
-      // Forms
       { name: 'useForgeForm', from: resolver.resolve('./runtime/composables/useForgeForm') },
-      // Pagination
       { name: 'useForgePagination', from: resolver.resolve('./runtime/composables/useForgePagination') },
-      // Uploads
       { name: 'useForgeUpload', from: resolver.resolve('./runtime/composables/useForgeUpload') },
-      // Middleware factories
+      { name: 'useForgeTg', from: resolver.resolve('./runtime/composables/useForgeTg') },
+      { name: 'useForgeCrud', from: resolver.resolve('./runtime/composables/useForgeCrud') },
+      { name: 'useForgeCursorPagination', from: resolver.resolve('./runtime/composables/useForgeCursorPagination') },
       { name: 'ForgeAuthMiddleware', from: resolver.resolve('./runtime/utils/forgeCanMiddleware') },
       { name: 'PermissionMiddleware', from: resolver.resolve('./runtime/utils/forgeCanMiddleware') },
       { name: 'PermissionAllMiddleware', from: resolver.resolve('./runtime/utils/forgeCanMiddleware') },

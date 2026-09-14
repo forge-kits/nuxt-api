@@ -2,10 +2,6 @@
 
 Nuxt module that bridges [forge-kits](https://pypi.org/project/forge-kits/) FastAPI backend with your Nuxt app.
 
-**Two auth contexts, one module:**
-- `useForgeAuth()` / `useForgeAuth('client')` — regular users. Login, logout, current user.
-- `useForgeAuth('guard')` — RBAC context. Independent session, full RBAC via `useForgePermissions`.
-
 ---
 
 ## Installation
@@ -21,42 +17,56 @@ export default defineNuxtConfig({
   forgeApi: {
     url: 'http://localhost:8000',
     prefix: '/api/v1',   // or false to omit
-    strategy: 'cookie',  // 'cookie' | 'telegram'
-    auth: {
-      client: { autoFetch: true },
-      guard: { autoFetch: false },
+    default: 'api',      // default guard name
+    guards: {
+      api:   { strategy: 'cookie' },
+      admin: { strategy: 'cookie' },
     },
   },
 })
 ```
+
+Guards mirror your Python `config/auth.py` – same names, same strategies. Secrets and model paths stay on the backend only.
 
 ### All options
 
 | Option | Default | Description |
 |---|---|---|
 | `url` | `http://localhost:8000` | Backend base URL |
-| `prefix` | `/api/v1` | API prefix prepended to every request. Set to `false` to omit |
-| `strategy` | `cookie` | Auth strategy: `cookie` or `telegram` |
+| `prefix` | `/api/v1` | API prefix. Set to `false` to omit |
 | `credentials` | `true` | Send cookies with every request |
-| `auth.client.autoFetch` | `false` | Fetch client session on app start |
-| `auth.client.login` | `/auth/login` | Client login endpoint |
-| `auth.client.logout` | `/auth/logout` | Client logout endpoint |
-| `auth.client.me` | `/auth/me` | Client current-user endpoint |
-| `auth.guard.autoFetch` | `false` | Fetch guard session on app start |
-| `auth.guard.login` | `/admin/auth/login` | Guard login endpoint |
-| `auth.guard.logout` | `/admin/auth/logout` | Guard logout endpoint |
-| `auth.guard.me` | `/admin/auth/me` | Guard current-user endpoint |
+| `default` | `'api'` | Default guard used when none is specified |
+| `guards` | `{ api: { strategy: 'cookie' } }` | Guard definitions |
+
+### Guard options
+
+| Option | Default | Description |
+|---|---|---|
+| `strategy` | — | `'cookie'` or `'telegram'` |
+| `autoFetch` | `false` | Fetch user on app start |
+| `endpoints.login` | `/auth/login` (default guard) or `/{name}/auth/login` | Override login path |
+| `endpoints.logout` | convention | Override logout path |
+| `endpoints.me` | convention | Override me path |
+
+Endpoint convention:
+- Default guard → `/auth/login`, `/auth/logout`, `/auth/me`
+- Other guards → `/{name}/auth/login`, `/{name}/auth/logout`, `/{name}/auth/me`
+
+`telegram` strategy only generates `me` – no `login` or `logout`.
 
 ---
 
-## Client auth — Cookie
+## Auth — `useForgeAuth`
 
-The server sets a signed `httpOnly` session cookie. Every request sends `credentials: 'include'` automatically. On app start the module calls `/auth/me` and hydrates the user state.
+```ts
+const { user, isAuthenticated, login, logout, fetchUser } = useForgeAuth()
+// or for a specific guard:
+const { user, isAuthenticated } = useForgeAuth('admin')
+```
 
 ### Login page
 
 ```vue
-<!-- pages/login.vue -->
 <script setup lang="ts">
 const { login, isAuthenticated } = useForgeAuth()
 const { form, errors, serverError, loading, submit } = useForgeForm({
@@ -76,56 +86,47 @@ async function handleLogin() {
 
 <template>
   <form @submit.prevent="handleLogin">
-    <div>
-      <input v-model="form.email" type="email" placeholder="Email" />
-      <span v-if="errors.email">{{ errors.email }}</span>
-    </div>
-    <div>
-      <input v-model="form.password" type="password" placeholder="Password" />
-      <span v-if="errors.password">{{ errors.password }}</span>
-    </div>
+    <input v-model="form.email" type="email" />
+    <span v-if="errors.email">{{ errors.email }}</span>
+    <input v-model="form.password" type="password" />
+    <span v-if="errors.password">{{ errors.password }}</span>
     <p v-if="serverError">{{ serverError }}</p>
     <button :disabled="loading">{{ loading ? 'Signing in…' : 'Sign in' }}</button>
   </form>
 </template>
 ```
 
-### Navbar / current user
+| Return | Description |
+|---|---|
+| `user` | Backend-verified user or `null` |
+| `isAuthenticated` | `computed(() => !!user.value)` |
+| `login(creds)` | POST to login endpoint, then fetchUser |
+| `logout()` | POST to logout endpoint, clears user |
+| `fetchUser()` | GET `/me`, hydrates user state |
 
-```vue
-<script setup lang="ts">
-const { user, isAuthenticated, logout } = useForgeAuth()
-</script>
-
-<template>
-  <nav>
-    <template v-if="isAuthenticated">
-      <span>{{ user?.email }}</span>
-      <button @click="logout">Logout</button>
-    </template>
-    <NuxtLink v-else to="/login">Login</NuxtLink>
-  </nav>
-</template>
-```
-
-### Client auth middleware
+### Auth middleware
 
 ```ts
-// middleware/auth.ts — manual
-export default defineNuxtRouteMiddleware(() => {
-  const { isAuthenticated } = useForgeAuth()
-  if (!isAuthenticated.value) return navigateTo('/login')
-})
-
-// or via factory
+// factory (recommended)
 definePageMeta({
   middleware: [ForgeAuthMiddleware({ redirect: '/login' })],
+})
+
+// specific guard
+definePageMeta({
+  middleware: [ForgeAuthMiddleware({ guard: 'admin', redirect: '/admin/login' })],
+})
+
+// manual
+export default defineNuxtRouteMiddleware(() => {
+  const { isAuthenticated } = useForgeAuth('admin')
+  if (!isAuthenticated.value) return navigateTo('/admin/login')
 })
 ```
 
 ### `<ForgeAuth>` component
 
-Renders slot only when authenticated. Accepts `role` prop (`'client'` | `'guard'`, default `'client'`).
+Renders slot only when authenticated. Optional `guard` prop.
 
 ```vue
 <ForgeAuth>
@@ -135,8 +136,7 @@ Renders slot only when authenticated. Accepts `role` prop (`'client'` | `'guard'
   </template>
 </ForgeAuth>
 
-<!-- guard context -->
-<ForgeAuth role="guard">
+<ForgeAuth guard="admin">
   <AdminPanel />
   <template #fallback>
     <NuxtLink to="/admin/login">Admin login</NuxtLink>
@@ -144,50 +144,16 @@ Renders slot only when authenticated. Accepts `role` prop (`'client'` | `'guard'
 </ForgeAuth>
 ```
 
-**Backend:**
-
-```python
-# app/controllers/auth_controller.py
-class AuthController(Controller):
-    prefix = "/auth"
-
-    @route.post("/login")
-    async def login(self, body: LoginRequest, response: Response):
-        user = await User.get_or_none(email=body.email)
-        if not user or not user.check_password(body.password):
-            raise HTTPException(401, "Invalid credentials")
-        auth.set_cookie(response, user.auth_claims())
-        return {"ok": True}
-
-    @route.post("/logout")
-    async def logout(self, response: Response):
-        auth.delete_cookie(response)
-        return {"ok": True}
-
-    @route.get("/me")
-    async def me(self, auth_user: CurrentUser):
-        user = await User.find_or_fail(int(auth_user.id))
-        return {"id": user.id, "email": user.email}
-```
-
 ---
 
-## Client auth — Telegram Mini App
+## Telegram Mini App — `useForgeTg`
 
-Reads `window.Telegram.WebApp.initData` and sends it as `X-Telegram-Init-Data` on every request. No login/logout — the user is resolved via `/auth/me` on app start.
-
-```ts
-// nuxt.config.ts
-forgeApi: { strategy: 'telegram' }
-```
+Wraps `window.Telegram.WebApp`. Use for UI helpers independent of auth.
 
 ```vue
 <script setup lang="ts">
 const {
-  user,              // backend user (server-verified)
-  isAuthenticated,
-  fetchUser,
-  tgUser,            // from initDataUnsafe — display only, untrusted
+  tgUser,           // from initDataUnsafe — display only, not verified
   tgUserId,
   tgUsername,
   tgFullName,
@@ -196,24 +162,18 @@ const {
   tgIsPremium,
   tgAllowsWriteToPm,
   isWebApp,
-  tgReady,           // call WebApp.ready()
-  tgHaptic,          // 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'
+  tgReady,          // call WebApp.ready()
+  tgHaptic,         // 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'
   tgHapticSuccess,
-} = useForgeAuth()
+} = useForgeTg()
 
 onMounted(tgReady)
 </script>
-
-<template>
-  <div v-if="isAuthenticated">
-    <img v-if="tgPhotoUrl" :src="tgPhotoUrl" />
-    <p>{{ tgFullName }}</p>
-    <p v-if="tgIsPremium">⭐ Premium</p>
-  </div>
-</template>
 ```
 
-**Local development** — paste a real `initData` string to `.env`:
+Auth (`useForgeAuth`) with `strategy: 'telegram'` sends `X-Telegram-Init-Data` header automatically. The backend verifies it and returns the backend user. `useForgeTg` is for client-side WebApp UI only.
+
+**Local development** – paste a real `initData` string to `.env`:
 
 ```env
 VITE_TELEGRAM_INIT_DATA=user=%7B%22id%22%3A...&hash=abc123
@@ -221,11 +181,11 @@ VITE_TELEGRAM_INIT_DATA=user=%7B%22id%22%3A...&hash=abc123
 
 ### `<ForgeTg>` component
 
-Renders slot only inside a Telegram Mini App (`isWebApp === true`).
+Renders slot only inside a Telegram Mini App.
 
 ```vue
 <ForgeTg>
-  <TelegramSpecificUI />
+  <TelegramUI />
   <template #fallback>
     <p>Open in Telegram to continue.</p>
   </template>
@@ -234,306 +194,218 @@ Renders slot only inside a Telegram Mini App (`isWebApp === true`).
 
 ---
 
-## Guard auth & RBAC
-
-Guard has its own independent session (`forge_guard` state, separate endpoints). The guard's `/me` response must include `permissions` and `roles` arrays — the module uses them for all RBAC checks.
-
-### Guard login page
-
-```vue
-<!-- pages/admin/login.vue -->
-<script setup lang="ts">
-const { login, isAuthenticated } = useForgeAuth('guard')
-const { form, errors, serverError, loading, submit } = useForgeForm({
-  email: '',
-  password: '',
-})
-
-if (isAuthenticated.value) navigateTo('/admin/dashboard')
-
-async function handleLogin() {
-  await submit(async (data) => {
-    await login(data)
-    navigateTo('/admin/dashboard')
-  })
-}
-</script>
-
-<template>
-  <form @submit.prevent="handleLogin">
-    <div>
-      <input v-model="form.email" type="email" placeholder="Email" />
-      <span v-if="errors.email">{{ errors.email }}</span>
-    </div>
-    <div>
-      <input v-model="form.password" type="password" placeholder="Password" />
-      <span v-if="errors.password">{{ errors.password }}</span>
-    </div>
-    <p v-if="serverError">{{ serverError }}</p>
-    <button :disabled="loading">{{ loading ? 'Signing in…' : 'Admin sign in' }}</button>
-  </form>
-</template>
-```
-
-### Guard auth middleware
+## RBAC — `useForgePermissions`
 
 ```ts
-// via factory (recommended)
-definePageMeta({
-  middleware: [ForgeAuthMiddleware({ role: 'guard', redirect: '/admin/login' })],
-})
-
-// or manual
-export default defineNuxtRouteMiddleware(() => {
-  const { isAuthenticated } = useForgeAuth('guard')
-  if (!isAuthenticated.value) return navigateTo('/admin/login')
-})
+const { can, canAll, hasRole, hasAllRoles, permissions, roles } = useForgePermissions()
+// or for a specific guard:
+const { can } = useForgePermissions('admin')
 ```
 
-### RBAC in templates — `<ForgeCan>` / `<ForgeRole>`
+The guard's `/me` response must include `permissions` and `roles` arrays.
+
+| Method | Returns `true` when |
+|---|---|
+| `can(...perms)` | user has **any** of the permissions |
+| `canAll(...perms)` | user has **all** permissions |
+| `hasRole(...roles)` | user has **any** of the roles |
+| `hasAllRoles(...roles)` | user has **all** roles |
+
+### `<ForgeCan>` / `<ForgeRole>` components
 
 ```vue
-<!-- any permission from the list -->
 <ForgeCan perm="edit:posts">
   <button>Edit</button>
 </ForgeCan>
 
-<!-- must have ALL permissions -->
 <ForgeCan :perm="['edit:posts', 'publish:posts']" :all="true">
   <PublishPanel />
 </ForgeCan>
 
-<!-- role-based with fallback -->
 <ForgeRole role="admin">
   <AdminPanel />
-  <template #fallback>
-    <p>Admins only.</p>
-  </template>
-</ForgeRole>
-
-<!-- must have ALL roles -->
-<ForgeRole :role="['admin', 'editor']" :all="true">
-  <SuperPanel />
+  <template #fallback><p>Admins only.</p></template>
 </ForgeRole>
 ```
 
-| Prop | Type | Default | Description |
-|---|---|---|---|
-| `perm` / `role` | `string \| string[]` | — | Permission(s) or role(s) to check |
-| `all` | `boolean` | `false` | Require all (AND) instead of any (OR) |
-
-### RBAC in logic — `useForgePermissions`
-
-```vue
-<script setup lang="ts">
-const { can, canAll, hasRole, hasAllRoles, permissions, roles } = useForgePermissions()
-</script>
-
-<template>
-  <button v-if="can('edit:posts')">Edit</button>
-  <button v-if="hasRole('admin')">Delete</button>
-</template>
-```
-
-| Method | Returns `true` when |
-|---|---|
-| `can(...perms)` | guard has **any** of the permissions |
-| `canAll(...perms)` | guard has **all** permissions |
-| `hasRole(...roles)` | guard has **any** of the roles |
-| `hasAllRoles(...roles)` | guard has **all** roles |
+Optional `guard` prop on both components.
 
 ### RBAC route middleware
 
 ```ts
-// pages/admin/posts/[id]/edit.vue
 definePageMeta({
   middleware: [
-    'admin-auth',
-    PermissionMiddleware('edit:posts', { redirect: '/admin/403' }),
+    PermissionMiddleware('edit:posts', { redirect: '/403' }),
   ],
 })
 
-// require ALL permissions
 definePageMeta({
-  middleware: [PermissionAllMiddleware(['edit:posts', 'publish:posts'], { redirect: '/admin/403' })],
+  middleware: [PermissionAllMiddleware(['edit:posts', 'publish:posts'])],
 })
 
-// role-based
 definePageMeta({
-  middleware: [RoleMiddleware('editor', { redirect: '/admin/403' })],
-})
-
-// require ALL roles
-definePageMeta({
-  middleware: [RoleAllMiddleware(['admin', 'editor'], { redirect: '/admin/403' })],
+  middleware: [RoleMiddleware('admin', { redirect: '/403' })],
 })
 ```
 
-Without `redirect` option — throws `403 Forbidden`. With `redirect` — calls `navigateTo(redirect)`.
-
-**Backend:**
-
-```python
-@route.get("/me")
-async def me(self, auth_user: CurrentUser):
-    admin = await Admin.find_or_fail(int(auth_user.id))
-    return {
-        "id":          admin.id,
-        "email":       admin.email,
-        "permissions": await admin.get_all_permissions(),
-        "roles":       await admin.get_role_names(),
-    }
-```
+Without `redirect` – throws `403 Forbidden`.
 
 ---
 
 ## API calls — `useForgeApi`
 
-Typed wrapper around `$fetch`. Automatically attaches `baseURL`, cookies/Telegram header, and `credentials`.
+```ts
+const api = useForgeApi()          // default guard
+const api = useForgeApi('admin')   // specific guard
 
-```vue
-<script setup lang="ts">
-interface Post { id: number; title: string; body: string }
-
-const api = useForgeApi()
-
-const posts = await api.get<Post[]>('/posts', { params: { page: 1, search: 'nuxt' } })
-const post  = await api.post<Post>('/posts', { title: 'Hello', body: '...' })
-
-await api.patch<Post>(`/posts/${post.id}`, { title: 'Updated' })
-await api.put<Post>(`/posts/${post.id}`, { title: 'Replaced', body: '...' })
-await api.delete(`/posts/${post.id}`)
-</script>
+const posts = await api.get<Post[]>('/posts', { params: { page: 1 } })
+const post  = await api.post<Post>('/posts', { title: 'Hello' })
+await api.patch<Post>(`/posts/${id}`, { title: 'Updated' })
+await api.put<Post>(`/posts/${id}`, { title: 'Replaced', body: '...' })
+await api.delete(`/posts/${id}`)
 ```
 
 ---
 
-## Forms — `useForgeForm`
+## CRUD — `useForgeCrud`
 
-Automatically maps FastAPI 422 Pydantic validation errors to field-level `errors`. Non-field errors go to `serverError`. Re-throws unknown errors so you can handle them upstream.
+Wraps the standard forge-kits Controller convention: `GET /url`, `POST /url`, `GET /url/{id}`, `PATCH /url/{id}`, `DELETE /url/{id}`.
 
-```vue
-<script setup lang="ts">
-const api = useForgeApi()
-const { form, errors, serverError, loading, clearErrors, submit } = useForgeForm({
-  title: '',
-  body: '',
-  tags: '',
-})
+```ts
+const { list, get, create, update, replace, remove, loading } = useForgeCrud<Post>('/posts')
 
-async function handleSubmit() {
-  await submit(async (data) => {
-    await api.post('/posts', data)
-    navigateTo('/posts')
-  })
-}
-</script>
-
-<template>
-  <form @submit.prevent="handleSubmit">
-    <div>
-      <input v-model="form.title" placeholder="Title" />
-      <span v-if="errors.title">{{ errors.title }}</span>
-    </div>
-    <div>
-      <textarea v-model="form.body" placeholder="Body" />
-      <span v-if="errors.body">{{ errors.body }}</span>
-    </div>
-    <p v-if="serverError" class="error">{{ serverError }}</p>
-    <button :disabled="loading">{{ loading ? 'Saving…' : 'Save' }}</button>
-  </form>
-</template>
+const posts  = await list({ page: 1, search: 'nuxt' })
+const post   = await get(42)
+const newPost = await create({ title: 'Hello' })
+await update(42, { title: 'Updated' })
+await replace(42, { title: 'Replaced', body: '...' })
+await remove(42)
 ```
 
-| Return | Type | Description |
-|---|---|---|
-| `form` | `reactive<T>` | Two-way bound form data |
-| `errors` | `Ref<Record<string, string>>` | Field errors from Pydantic 422 |
-| `serverError` | `Ref<string \| null>` | Non-field error from `detail` string |
-| `loading` | `Ref<boolean>` | `true` while submit is in-flight |
-| `clearErrors()` | `() => void` | Reset all errors manually |
-| `submit(fn)` | `(fn) => Promise<void>` | Run `fn`, catch and map backend errors |
+Per-action loading states:
+
+```ts
+loading.list.value    // true while list() is in-flight
+loading.get.value
+loading.create.value
+loading.update.value
+loading.remove.value
+```
+
+Two independent instances on the same page:
+
+```ts
+const posts    = useForgeCrud('/posts')
+const comments = useForgeCrud('/comments')
+// loading states are fully isolated
+```
+
+Optional `guard` option:
+
+```ts
+const crud = useForgeCrud('/admin/posts', { guard: 'admin' })
+```
 
 ---
 
 ## Pagination — `useForgePagination`
 
-Fetches paginated data on mount. Backend must return the standard forge-kits envelope.
+Offset-based pagination. Fetches on mount (SSR-compatible).
 
 ```vue
 <script setup lang="ts">
-interface Post { id: number; title: string }
-
 const { data, meta, loading, error, page, nextPage, prevPage, goToPage } =
   useForgePagination<Post>('/posts', { perPage: 20 })
 </script>
 
 <template>
-  <div v-if="loading">Loading…</div>
-  <ul v-else>
+  <ul>
     <li v-for="post in data" :key="post.id">{{ post.title }}</li>
   </ul>
-
-  <div>
-    <button :disabled="page <= 1" @click="prevPage">← Prev</button>
-    <span>{{ page }} / {{ meta?.last_page }}</span>
-    <button :disabled="!meta || page >= meta.last_page" @click="nextPage">Next →</button>
-  </div>
+  <button :disabled="page <= 1" @click="prevPage">← Prev</button>
+  <span>{{ page }} / {{ meta?.last_page }}</span>
+  <button :disabled="!meta || page >= meta.last_page" @click="nextPage">Next →</button>
 </template>
 ```
 
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `perPage` | `number` | backend default | Items per page |
-| `immediate` | `boolean` | `true` | Fetch on mount |
+Backend envelope: `{ data: T[], meta: { current_page, per_page, total, last_page, from, to }, links: { prev, next } }`
 
-`PaginationMeta`: `{ current_page, per_page, total, last_page, from, to }`
+---
 
-Backend envelope: `{ data: T[], meta: PaginationMeta, links: { prev, next } }`
+## Cursor pagination — `useForgeCursorPagination`
+
+Cursor-based pagination with `loadMore` for infinite scroll.
+
+```vue
+<script setup lang="ts">
+const { data, loading, hasMore, fetch, loadMore, reset } =
+  useForgeCursorPagination<Post>('/posts', { perPage: 20 })
+</script>
+
+<template>
+  <ul>
+    <li v-for="post in data" :key="post.id">{{ post.title }}</li>
+  </ul>
+  <button v-if="hasMore" :disabled="loading" @click="loadMore">Load more</button>
+</template>
+```
+
+| Return | Description |
+|---|---|
+| `data` | Accumulated items |
+| `nextCursor` / `prevCursor` | Current cursors |
+| `hasMore` | `true` when `next_cursor` is not null |
+| `fetch(cursor?)` | Replace data with fresh page |
+| `loadMore()` | Append next page to data |
+| `reset()` | Clear data and meta |
+
+Backend envelope: `{ data: T[], meta: { next_cursor, prev_cursor, per_page } }`
+
+---
+
+## Forms — `useForgeForm`
+
+Maps FastAPI 422 Pydantic errors to field-level `errors`.
+
+```ts
+const { form, errors, serverError, loading, clearErrors, reset, submit } = useForgeForm({
+  title: '',
+  body: '',
+})
+
+await submit(async (data) => {
+  await api.post('/posts', data)
+  navigateTo('/posts')
+})
+```
+
+| Return | Description |
+|---|---|
+| `form` | Reactive form data |
+| `errors` | Field errors from Pydantic 422 |
+| `serverError` | Non-field error from `detail` string |
+| `loading` | `true` while submit is in-flight |
+| `clearErrors()` | Reset all errors |
+| `reset()` | Reset form to initial values and clear errors |
+| `submit(fn)` | Run `fn`, catch and map backend errors |
 
 ---
 
 ## File uploads — `useForgeUpload`
 
-Uses `XMLHttpRequest` for real-time progress tracking. Cookies and Telegram header are sent automatically.
+Real-time progress via `XMLHttpRequest`.
 
-```vue
-<script setup lang="ts">
+```ts
 const { progress, loading, error, result, upload, reset } = useForgeUpload('/files/upload')
+// or for a specific guard:
+const { upload } = useForgeUpload('/files/upload', 'admin')
 
-async function handleFile(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  const res = await upload(file)
-  console.log('URL:', res.url)
-}
+const res = await upload(file)
+console.log(res.url)
 
 // with extra form fields
-async function handleAvatar(file: File) {
-  await upload(file, { category: 'avatars' })
-}
-</script>
-
-<template>
-  <input type="file" @change="handleFile" />
-  <div v-if="loading">
-    <progress :value="progress" max="100" />
-    <span>{{ progress }}%</span>
-  </div>
-  <p v-if="error">{{ error }}</p>
-  <img v-if="result?.url" :src="result.url" />
-  <button v-if="result" @click="reset">Upload another</button>
-</template>
+await upload(file, { category: 'avatars' })
 ```
-
-| Return | Type | Description |
-|---|---|---|
-| `progress` | `Ref<number>` | 0–100, updated in real time |
-| `loading` | `Ref<boolean>` | `true` while uploading |
-| `error` | `Ref<string \| null>` | Error message if upload failed |
-| `result` | `Ref<{ url, path?, ...} \| null>` | Server response |
-| `upload(file, extra?)` | `Promise<UploadResponse>` | Start upload |
-| `reset()` | `() => void` | Clear state |
 
 ---
 
@@ -541,36 +413,35 @@ async function handleAvatar(file: File) {
 
 ### Composables
 
-| Composable | Signature | Returns |
-|---|---|---|
-| `useForgeAuth` | `(role?: 'client' \| 'guard')` | `user, isAuthenticated, login, logout, fetchUser, initData, initDataUnsafe, tgUser, tgUserId, tgUsername, tgFullName, tgPhotoUrl, tgLanguageCode, tgIsPremium, tgAllowsWriteToPm, isWebApp, tgReady, tgHaptic, tgHapticSuccess` |
-| `useForgePermissions` | `()` | `permissions, roles, can, canAll, hasRole, hasAllRoles` |
-| `useForgeApi` | `()` | `get, post, patch, put, delete` |
-| `useForgeForm` | `<T>(initial: T)` | `form, errors, serverError, loading, clearErrors, submit` |
-| `useForgePagination` | `<T>(url, opts?)` | `data, meta, links, loading, error, page, perPage, fetch, nextPage, prevPage, goToPage` |
-| `useForgeUpload` | `(path: string)` | `progress, loading, error, result, upload, reset` |
+| Composable | Signature |
+|---|---|
+| `useForgeAuth` | `(guard?: string)` |
+| `useForgePermissions` | `(guard?: string)` |
+| `useForgeApi` | `(guard?: string)` |
+| `useForgeForm` | `<T>(initial: T)` |
+| `useForgeCrud` | `<T>(url, opts?: { guard? })` |
+| `useForgePagination` | `<T>(url, opts?: { perPage?, immediate?, guard? })` |
+| `useForgeCursorPagination` | `<T>(url, opts?: { perPage?, immediate?, guard? })` |
+| `useForgeUpload` | `(path, guard?: string)` |
+| `useForgeTg` | `()` |
 
 ### Components
 
 | Component | Props | Description |
 |---|---|---|
-| `<ForgeAuth>` | `role?: 'client' \| 'guard'` | Renders slot if authenticated in the given context |
-| `<ForgeTg>` | — | Renders slot only inside a Telegram Mini App |
-| `<ForgeCan>` | `perm: string\|string[], all?: boolean` | Renders slot if guard has the permission(s) |
-| `<ForgeRole>` | `role: string\|string[], all?: boolean` | Renders slot if guard has the role(s) |
+| `<ForgeAuth>` | `guard?: string` | Renders slot if authenticated |
+| `<ForgeTg>` | — | Renders slot only inside Telegram Mini App |
+| `<ForgeCan>` | `perm: string\|string[], all?: boolean, guard?: string` | Permission check |
+| `<ForgeRole>` | `role: string\|string[], all?: boolean, guard?: string` | Role check |
 
-All components accept a `#fallback` slot rendered when access is denied.
+All components accept a `#fallback` slot.
 
 ### Middleware factories
 
-| Factory | Signature | Description |
-|---|---|---|
-| `ForgeAuthMiddleware` | `(opts?)` | Requires authenticated session |
-| `PermissionMiddleware` | `(perm, opts?)` | Any of the given permissions |
-| `PermissionAllMiddleware` | `(perm, opts?)` | All of the given permissions |
-| `RoleMiddleware` | `(role, opts?)` | Any of the given roles |
-| `RoleAllMiddleware` | `(role, opts?)` | All of the given roles |
-
-`opts` for `ForgeAuthMiddleware`: `{ role?: 'client' | 'guard', redirect?: string }`
-
-`opts` for RBAC middleware: `{ redirect?: string }`
+| Factory | Signature |
+|---|---|
+| `ForgeAuthMiddleware` | `(opts?: { guard?, redirect? })` |
+| `PermissionMiddleware` | `(perm, opts?: { guard?, redirect? })` |
+| `PermissionAllMiddleware` | `(perm, opts?: { guard?, redirect? })` |
+| `RoleMiddleware` | `(role, opts?: { guard?, redirect? })` |
+| `RoleAllMiddleware` | `(role, opts?: { guard?, redirect? })` |

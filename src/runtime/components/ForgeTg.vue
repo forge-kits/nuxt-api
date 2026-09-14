@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useForgeAuth } from '../composables/useForgeAuth'
+import { useForgeTg } from '../composables/useForgeTg'
 
-const { isWebApp } = useForgeAuth()
+const { isWebApp } = useForgeTg()
 </script>
 
 <template>

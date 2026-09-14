@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { useForgeAuth } from '../composables/useForgeAuth'
-import type { AuthRole } from '../composables/useForgeAuth'
 
-const props = withDefaults(defineProps<{
-  role?: AuthRole
-}>(), {
-  role: 'client',
-})
+const props = defineProps<{
+  guard?: string
+}>()
 
-const { isAuthenticated } = useForgeAuth(props.role)
+const { isAuthenticated } = useForgeAuth(props.guard)
 </script>
 
 <template>

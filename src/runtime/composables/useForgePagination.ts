@@ -1,4 +1,5 @@
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onServerPrefetch } from 'vue'
+import { useNuxtApp } from '#imports'
 import { useForgeApi } from './useForgeApi'
 
 export interface PaginationMeta {
@@ -23,14 +24,15 @@ export interface PaginatedResponse<T> {
 
 export interface PaginationOptions {
   perPage?: number
-  immediate?: boolean   // fetch on mount (default: true)
+  immediate?: boolean
+  guard?: string
 }
 
 export const useForgePagination = <T = Record<string, unknown>>(
   url: string,
   options: PaginationOptions = {},
 ) => {
-  const api = useForgeApi()
+  const api = useForgeApi(options.guard)
 
   const data = ref<T[]>([]) as ReturnType<typeof ref<T[]>>
   const meta = ref<PaginationMeta | null>(null)
@@ -41,7 +43,7 @@ export const useForgePagination = <T = Record<string, unknown>>(
   const page = ref(1)
   const perPage = ref<number | null>(options.perPage ?? null)
 
-  const fetch = async (params: { page?: number; per_page?: number } = {}): Promise<void> => {
+  const fetch = async (params: { page?: number, per_page?: number } = {}): Promise<void> => {
     loading.value = true
     error.value = null
     try {
@@ -79,20 +81,11 @@ export const useForgePagination = <T = Record<string, unknown>>(
   }
 
   if (options.immediate !== false) {
-    onMounted(() => fetch())
+    onServerPrefetch(fetch)
+    onMounted(() => {
+      if (!useNuxtApp().isHydrating) fetch()
+    })
   }
 
-  return {
-    data,
-    meta,
-    links,
-    loading,
-    error,
-    page,
-    perPage,
-    fetch,
-    nextPage,
-    prevPage,
-    goToPage,
-  }
+  return { data, meta, links, loading, error, page, perPage, fetch, nextPage, prevPage, goToPage }
 }

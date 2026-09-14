@@ -5,11 +5,12 @@ import { useForgePermissions } from '../composables/useForgePermissions'
 const props = withDefaults(defineProps<{
   role: string | string[]
   all?: boolean
+  guard?: string
 }>(), {
   all: false,
 })
 
-const { hasRole, hasAllRoles } = useForgePermissions()
+const { hasRole, hasAllRoles } = useForgePermissions(props.guard)
 
 const roles = computed(() => Array.isArray(props.role) ? props.role : [props.role])
 const allowed = computed(() => props.all ? hasAllRoles(...roles.value) : hasRole(...roles.value))

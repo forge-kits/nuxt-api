@@ -21,6 +21,11 @@ export const useForgeForm = <T extends Record<string, unknown>>(initialValues: T
     serverError.value = null
   }
 
+  function reset(): void {
+    Object.assign(form, initialValues)
+    clearErrors()
+  }
+
   async function submit(fn: (data: T) => Promise<void>): Promise<void> {
     clearErrors()
     loading.value = true
@@ -32,7 +37,6 @@ export const useForgeForm = <T extends Record<string, unknown>>(initialValues: T
 
       if (data?.detail) {
         if (Array.isArray(data.detail)) {
-          // Pydantic validation errors — map loc[-1] → message
           const mapped: Record<string, string> = {}
           for (const item of data.detail) {
             const field = item.loc?.[item.loc.length - 1]
@@ -54,5 +58,5 @@ export const useForgeForm = <T extends Record<string, unknown>>(initialValues: T
     }
   }
 
-  return { form, errors, serverError, loading, clearErrors, submit }
+  return { form, errors, serverError, loading, clearErrors, reset, submit }
 }

@@ -1,9 +1,5 @@
 import { ref } from 'vue'
-import { useRuntimeConfig } from '#imports'
-
-type TelegramWindow = typeof window & {
-  Telegram?: { WebApp: { initData: string } }
-}
+import { useForgeHttp } from '../utils/forge-http'
 
 export interface UploadResponse {
   url: string
@@ -11,10 +7,8 @@ export interface UploadResponse {
   [key: string]: unknown
 }
 
-export const useForgeUpload = (uploadPath: string) => {
-  const config = useRuntimeConfig()
-  const { url, prefix, strategy, credentials } = config.public.forgeApi
-  const baseURL = prefix ? `${url}${prefix}` : url
+export const useForgeUpload = (uploadPath: string, guard?: string) => {
+  const { baseURL, credentialsMode, buildHeaders } = useForgeHttp(guard)
 
   const progress = ref(0)
   const loading = ref(false)
@@ -29,19 +23,17 @@ export const useForgeUpload = (uploadPath: string) => {
         for (const [k, v] of Object.entries(extra)) formData.append(k, v)
       }
 
+      const headers = buildHeaders()
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${baseURL}${uploadPath}`)
-      xhr.withCredentials = credentials
+      xhr.withCredentials = credentialsMode === 'include'
 
-      if (strategy === 'telegram' && import.meta.client) {
-        const initData = (window as TelegramWindow).Telegram?.WebApp?.initData ?? ''
-        if (initData) xhr.setRequestHeader('X-Telegram-Init-Data', initData)
+      for (const [k, v] of Object.entries(headers)) {
+        xhr.setRequestHeader(k, v)
       }
 
       xhr.upload.onprogress = (e: ProgressEvent) => {
-        if (e.lengthComputable) {
-          progress.value = Math.round((e.loaded / e.total) * 100)
-        }
+        if (e.lengthComputable) progress.value = Math.round((e.loaded / e.total) * 100)
       }
 
       xhr.onload = () => {

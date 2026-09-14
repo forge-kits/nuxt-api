@@ -2,24 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setStrategy, setPrefix, resetConfig } from './__mocks__/imports'
 import { useForgeAuth } from '../src/runtime/composables/useForgeAuth'
 
-const tgWebApp = (initData = 'tg-init-data') => ({
-  initData,
-  initDataUnsafe: {
-    user: {
-      id: 42,
-      first_name: 'Ivan',
-      last_name: 'Petrov',
-      username: 'ivanp',
-      language_code: 'ru',
-      is_premium: true,
-      allows_write_to_pm: false,
-      photo_url: 'https://t.me/photo.jpg',
-    },
-  },
-})
-
 describe('useForgeAuth', () => {
-  describe('Cookie strategy', () => {
+  describe('cookie strategy – default guard (api)', () => {
     it('login calls POST /auth/login then fetchUser', async () => {
       vi.mocked($fetch)
         .mockResolvedValueOnce(undefined)
@@ -68,10 +52,10 @@ describe('useForgeAuth', () => {
     })
   })
 
-  describe('Telegram strategy', () => {
+  describe('telegram strategy', () => {
     beforeEach(() => {
       setStrategy('telegram')
-      vi.stubGlobal('Telegram', { WebApp: tgWebApp() })
+      vi.stubGlobal('Telegram', { WebApp: { initData: 'tg-init-data' } })
       vi.stubGlobal('$fetch', vi.fn())
     })
 
@@ -95,45 +79,9 @@ describe('useForgeAuth', () => {
         headers: { 'X-Telegram-Init-Data': 'tg-init-data' },
       }))
     })
-
-    it('exposes tg user fields from initDataUnsafe', () => {
-      const { tgUserId, tgUsername, tgFullName, tgPhotoUrl, tgLanguageCode, tgIsPremium, isWebApp } = useForgeAuth()
-      expect(tgUserId.value).toBe(42)
-      expect(tgUsername.value).toBe('ivanp')
-      expect(tgFullName.value).toBe('Ivan Petrov')
-      expect(tgPhotoUrl.value).toBe('https://t.me/photo.jpg')
-      expect(tgLanguageCode.value).toBe('ru')
-      expect(tgIsPremium.value).toBe(true)
-      expect(isWebApp.value).toBe(true)
-    })
-
-    it('tgAllowsWriteToPm reflects the field', () => {
-      const { tgAllowsWriteToPm } = useForgeAuth()
-      expect(tgAllowsWriteToPm.value).toBe(false)
-    })
-
-    it('tg fields are null/false when Telegram is not available', () => {
-      vi.stubGlobal('Telegram', undefined)
-      const { tgUserId, tgFullName, tgPhotoUrl, isWebApp } = useForgeAuth()
-      expect(tgUserId.value).toBeNull()
-      expect(tgFullName.value).toBeNull()
-      expect(tgPhotoUrl.value).toBeNull()
-      expect(isWebApp.value).toBe(false)
-    })
-
-    it('tgFullName trims correctly with only first name', () => {
-      vi.stubGlobal('Telegram', {
-        WebApp: {
-          initData: 'x',
-          initDataUnsafe: { user: { id: 1, first_name: 'Solo', last_name: '' } },
-        },
-      })
-      const { tgFullName } = useForgeAuth()
-      expect(tgFullName.value).toBe('Solo')
-    })
   })
 
-  describe('Guard role', () => {
+  describe('admin guard', () => {
     beforeEach(() => resetConfig())
 
     it('login calls POST /admin/auth/login then fetchUser', async () => {
@@ -141,13 +89,12 @@ describe('useForgeAuth', () => {
         .mockResolvedValueOnce(undefined)
         .mockResolvedValueOnce({ id: 99, email: 'admin@b.com' })
 
-      const { login, user } = useForgeAuth('guard')
+      const { login, user } = useForgeAuth('admin')
       await login({ email: 'admin@b.com', password: 'secret' })
 
       expect(vi.mocked($fetch)).toHaveBeenNthCalledWith(1, '/admin/auth/login', expect.objectContaining({
         method: 'POST',
         body: { email: 'admin@b.com', password: 'secret' },
-        credentials: 'include',
       }))
       expect(user.value).toEqual({ id: 99, email: 'admin@b.com' })
     })
@@ -157,7 +104,7 @@ describe('useForgeAuth', () => {
         .mockResolvedValueOnce({ id: 99 })
         .mockResolvedValueOnce(undefined)
 
-      const { fetchUser, logout, user } = useForgeAuth('guard')
+      const { fetchUser, logout, user } = useForgeAuth('admin')
       await fetchUser()
       await logout()
 
@@ -167,18 +114,18 @@ describe('useForgeAuth', () => {
       expect(user.value).toBeNull()
     })
 
-    it('client and guard states are independent', async () => {
+    it('api and admin states are independent', async () => {
       vi.mocked($fetch)
         .mockResolvedValueOnce({ id: 1, email: 'user@b.com' })
         .mockResolvedValueOnce({ id: 99, email: 'admin@b.com' })
 
-      const { fetchUser: fetchClient, user: clientUser } = useForgeAuth('client')
-      const { fetchUser: fetchGuard, user: guardUser } = useForgeAuth('guard')
-      await fetchClient()
-      await fetchGuard()
+      const { fetchUser: fetchApi, user: apiUser } = useForgeAuth('api')
+      const { fetchUser: fetchAdmin, user: adminUser } = useForgeAuth('admin')
+      await fetchApi()
+      await fetchAdmin()
 
-      expect(clientUser.value?.email).toBe('user@b.com')
-      expect(guardUser.value?.email).toBe('admin@b.com')
+      expect(apiUser.value?.email).toBe('user@b.com')
+      expect(adminUser.value?.email).toBe('admin@b.com')
     })
   })
 

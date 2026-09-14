@@ -1,8 +1,4 @@
-import { useRuntimeConfig } from '#imports'
-
-type TelegramWindow = typeof window & {
-  Telegram?: { WebApp: { initData: string } }
-}
+import { useForgeHttp } from '../utils/forge-http'
 
 export interface ForgeRequestOptions {
   params?: Record<string, string | number | boolean>
@@ -10,21 +6,8 @@ export interface ForgeRequestOptions {
   [key: string]: unknown
 }
 
-export const useForgeApi = () => {
-  const config = useRuntimeConfig()
-  const { url, prefix, strategy, credentials } = config.public.forgeApi
-  const baseURL = prefix ? `${url}${prefix}` : url
-
-  function buildHeaders(extra?: Record<string, string>): Record<string, string> {
-    const h: Record<string, string> = { ...extra }
-
-    if (strategy === 'telegram' && import.meta.client) {
-      const initData = (window as TelegramWindow).Telegram?.WebApp?.initData ?? ''
-      if (initData) h['X-Telegram-Init-Data'] = initData
-    }
-
-    return h
-  }
+export const useForgeApi = (guard?: string) => {
+  const { baseURL, credentialsMode, buildHeaders } = useForgeHttp(guard)
 
   const request = async <T>(
     method: string,
@@ -32,13 +15,12 @@ export const useForgeApi = () => {
     options: ForgeRequestOptions = {},
   ): Promise<T> => {
     const { params, headers: extraHeaders, ...rest } = options
-
     return $fetch<T>(path, {
       baseURL,
       method,
       query: params,
       headers: buildHeaders(extraHeaders),
-      credentials: credentials ? 'include' : 'omit',
+      credentials: credentialsMode,
       ...rest,
     })
   }
@@ -46,16 +28,12 @@ export const useForgeApi = () => {
   return {
     get: <T>(path: string, options?: ForgeRequestOptions) =>
       request<T>('GET', path, options),
-
     post: <T>(path: string, body?: unknown, options?: ForgeRequestOptions) =>
       request<T>('POST', path, { body, ...options }),
-
     patch: <T>(path: string, body?: unknown, options?: ForgeRequestOptions) =>
       request<T>('PATCH', path, { body, ...options }),
-
     put: <T>(path: string, body?: unknown, options?: ForgeRequestOptions) =>
       request<T>('PUT', path, { body, ...options }),
-
     delete: <T>(path: string, options?: ForgeRequestOptions) =>
       request<T>('DELETE', path, options),
   }
